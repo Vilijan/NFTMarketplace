@@ -1,15 +1,14 @@
 from abc import ABC, abstractmethod
-import uuid
 
 
 class ResellMarketplaceInterface(ABC):
 
     @abstractmethod
-    def sell(self, price: int):
+    def sell(self):
         pass
 
     @abstractmethod
-    def buy(self, price: int):
+    def buy(self):
         pass
 
     @abstractmethod
