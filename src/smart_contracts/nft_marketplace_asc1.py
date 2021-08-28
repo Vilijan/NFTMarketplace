@@ -1,10 +1,10 @@
 from pyteal import *
 import algosdk
 
-from src.marketplace_interfaces import NFTMarketplace
+from src.marketplace_interfaces import NFTMarketplaceInterface
 
 
-class NFTMarketplaceASC1(NFTMarketplace):
+class NFTMarketplaceASC1(NFTMarketplaceInterface):
     class Variables:
         escrow_address = Bytes("ESCROW_ADDRESS")
         asa_id = Bytes("ASA_ID")

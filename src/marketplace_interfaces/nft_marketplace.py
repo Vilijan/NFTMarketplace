@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 
-class NFTMarketplace(ABC):
+class NFTMarketplaceInterface(ABC):
 
     @abstractmethod
     def initialize_escrow(self, escrow_address):
