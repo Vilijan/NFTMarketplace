@@ -1,10 +1,10 @@
 from pyteal import *
 import algosdk
 
-from src.marketplace_interfaces import EscrowInterface, ResellMarketplaceInterface
+from src.marketplace_interfaces import NFTMarketplace
 
 
-class SimpleMarketplaceASC1(EscrowInterface, ResellMarketplaceInterface):
+class NFTMarketplaceASC1(NFTMarketplace):
     class Variables:
         escrow_address = Bytes("ESCROW_ADDRESS")
         asa_id = Bytes("ASA_ID")
@@ -27,9 +27,16 @@ class SimpleMarketplaceASC1(EscrowInterface, ResellMarketplaceInterface):
     def application_start(self):
         actions = Cond(
             [Txn.application_id() == Int(0), self.app_initialization()],
-            [Txn.application_args[0] == Bytes(self.AppMethods.initialize_escrow), self.initialize_escrow()],
-            [Txn.application_args[0] == Bytes(self.AppMethods.make_sell_offer), self.make_sell_offer()],
-            [Txn.application_args[0] == Bytes(self.AppMethods.buy), self.buy()],
+
+            [Txn.application_args[0] == Bytes(self.AppMethods.initialize_escrow),
+             self.initialize_escrow(escrow_address=Txn.application_args[1])],
+
+            [Txn.application_args[0] == Bytes(self.AppMethods.make_sell_offer),
+             self.make_sell_offer(sell_price=Txn.application_args[1])],
+
+            [Txn.application_args[0] == Bytes(self.AppMethods.buy),
+             self.buy()],
+
             [Txn.application_args[0] == Bytes(self.AppMethods.stop_sell_offer), self.stop_sell_offer()]
         )
 
@@ -50,12 +57,12 @@ class SimpleMarketplaceASC1(EscrowInterface, ResellMarketplaceInterface):
             Return(Int(1))
         ])
 
-    def initialize_escrow(self):
+    def initialize_escrow(self, escrow_address):
         """
         Application call from the app_admin.
         :return:
         """
-        escrow_address = App.globalGetEx(Int(0), self.Variables.escrow_address)
+        curr_escrow_address = App.globalGetEx(Int(0), self.Variables.escrow_address)
 
         asset_escrow = AssetParam.clawback(Txn.assets[0])
         manager_address = AssetParam.manager(Txn.assets[0])
@@ -64,8 +71,8 @@ class SimpleMarketplaceASC1(EscrowInterface, ResellMarketplaceInterface):
         default_frozen = AssetParam.defaultFrozen(Txn.assets[0])
 
         return Seq([
-            escrow_address,
-            Assert(escrow_address.hasValue() == Int(0)),
+            curr_escrow_address,
+            Assert(curr_escrow_address.hasValue() == Int(0)),
 
             Assert(App.globalGet(self.Variables.app_admin) == Txn.sender()),
             Assert(Global.group_size() == Int(1)),
@@ -82,12 +89,12 @@ class SimpleMarketplaceASC1(EscrowInterface, ResellMarketplaceInterface):
             Assert(freeze_address.value() == Global.zero_address()),
             Assert(reserve_address.value() == Global.zero_address()),
 
-            App.globalPut(self.Variables.escrow_address, Txn.application_args[1]),
+            App.globalPut(self.Variables.escrow_address, escrow_address),
             App.globalPut(self.Variables.app_state, self.AppState.active),
             Return(Int(1))
         ])
 
-    def make_sell_offer(self):
+    def make_sell_offer(self, sell_price):
         """
         Single application call with 2 arguments.
         - method_name
@@ -107,7 +114,7 @@ class SimpleMarketplaceASC1(EscrowInterface, ResellMarketplaceInterface):
                        valid_number_of_arguments)
 
         update_state = Seq([
-            App.globalPut(self.Variables.asa_price, Btoi(Txn.application_args[1])),
+            App.globalPut(self.Variables.asa_price, Btoi(sell_price)),
             App.globalPut(self.Variables.app_state, self.AppState.selling_in_progress),
             Return(Int(1))
         ])

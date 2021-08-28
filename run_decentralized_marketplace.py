@@ -6,16 +6,15 @@ from algosdk import logic as algo_logic
 from algosdk.future import transaction as algo_txn
 from pyteal import compileTeal, Mode
 from algosdk.encoding import decode_address
-from src.decentralized_marketplace import SimpleMarketplaceASC1
+from src.smart_contracts import NFTMarketplaceASC1, nft_escrow
 from src.services.nft_service import NFTService
-from src.decentralized_marketplace.nft_escrow import nft_escrow
 
 client = get_client()
 
-decentralized_marketplace_contract = SimpleMarketplaceASC1()
+decentralized_marketplace_contract = NFTMarketplaceASC1()
 
-acc_pk, acc_address, _ = get_account_credentials(account_id=1)
-nft_buyer_pk, nft_buyer_address, _ = get_account_credentials(account_id=2)
+acc_pk, acc_address, _ = get_account_credentials(account_id=2)
+nft_buyer_pk, nft_buyer_address, _ = get_account_credentials(account_id=3)
 
 # Create ASA.
 nft_1_service = NFTService(nft_creator_pk=acc_pk,
@@ -24,6 +23,8 @@ nft_1_service = NFTService(nft_creator_pk=acc_pk,
                            asset_name="Tokility")
 
 nft1_id = nft_1_service.create_nft(client)
+
+print(f'NFT ID: {nft1_id}')
 
 # Create application.
 
@@ -41,7 +42,6 @@ approval_program_bytes = NetworkInteraction.compile_program(client=client,
 clear_program_bytes = NetworkInteraction.compile_program(client=client,
                                                          source_code=clear_program_compiled)
 app_args = [
-    nft1_id,
     decode_address(acc_address),
     decode_address(acc_address)
 ]
@@ -52,7 +52,8 @@ app_transaction = ApplicationTransactionRepository.create_application(client=cli
                                                                       clear_program=clear_program_bytes,
                                                                       global_schema=decentralized_marketplace_contract.global_schema,
                                                                       local_schema=decentralized_marketplace_contract.local_schema,
-                                                                      app_args=app_args)
+                                                                      app_args=app_args,
+                                                                      foreign_assets=[nft1_id])
 
 tx_id = NetworkInteraction.submit_transaction(client,
                                               transaction=app_transaction)
@@ -79,11 +80,18 @@ app_args = [
     decode_address(escrow_fund_address)
 ]
 
+# Change Management credentials.
+
+nft_1_service.change_nft_credentials_txn(client, escrow_fund_address)
+
+print('Asset management changed.')
+
 initialize_escrow_txn = ApplicationTransactionRepository.call_application(client=client,
                                                                           caller_private_key=acc_pk,
                                                                           app_id=app_id,
                                                                           on_complete=algo_txn.OnComplete.NoOpOC,
-                                                                          app_args=app_args)
+                                                                          app_args=app_args,
+                                                                          foreign_assets=[nft1_id])
 
 tx_id = NetworkInteraction.submit_transaction(client,
                                               transaction=initialize_escrow_txn)
@@ -102,14 +110,10 @@ _ = NetworkInteraction.submit_transaction(client,
 
 print(f'Funds submitted to the escrow address.')
 
-# Change Management credentials.
-
-nft_1_service.change_nft_credentials_txn(client, escrow_fund_address)
-
 # Start selling
 
 app_args = [
-    decentralized_marketplace_contract.AppMethods.sell,
+    decentralized_marketplace_contract.AppMethods.make_sell_offer,
     10000
 ]
 
@@ -188,4 +192,3 @@ signed_group = [app_call_txn_signed,
 
 txid = client.send_transactions(signed_group)
 print(f'Buy asa transaction completed in: {txid}')
-

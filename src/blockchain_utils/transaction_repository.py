@@ -33,22 +33,10 @@ class ApplicationTransactionRepository:
                            clear_program: bytes,
                            global_schema: algo_txn.StateSchema,
                            local_schema: algo_txn.StateSchema,
-                           app_args: Optional[List[Any]],
+                           app_args: Optional[List[Any]] = None,
+                           foreign_assets: Optional[List[int]] = None,
                            sign_transaction: bool = True) -> Union[Transaction, SignedTransaction]:
-        """
-        Initiates a transaction that represents application creation. The transaction is optionally signed using the
-        provided private key.
-        :param client: algorand client.
-        :param creator_private_key: private key of the creator of the application.
-        :param approval_program: encoded source code in bytes for the approval program.
-        :param clear_program: encoded source code in bytes for the clear program.
-        :param global_schema: global schema for the application.
-        :param local_schema: local schema for the application.
-        :param app_args: list of arguments for the application.
-        :param sign_transaction: boolean value that determines whether the created transaction should be signed or not.
-        :return:
-            Returns SignedTransaction or Transaction depending on the boolean property sign_transaction.
-        """
+
         creator_address = algo_acc.address_from_private_key(private_key=creator_private_key)
         suggested_params = get_default_suggested_params(client=client)
 
@@ -59,7 +47,8 @@ class ApplicationTransactionRepository:
                                             clear_program=clear_program,
                                             global_schema=global_schema,
                                             local_schema=local_schema,
-                                            app_args=app_args)
+                                            app_args=app_args,
+                                            foreign_assets=foreign_assets)
 
         if sign_transaction:
             txn = txn.sign(private_key=creator_private_key)
@@ -73,6 +62,7 @@ class ApplicationTransactionRepository:
                          app_id: int,
                          on_complete: algo_txn.OnComplete,
                          app_args: Optional[List[Any]] = None,
+                         foreign_assets: Optional[List[int]] = None,
                          sign_transaction: bool = True) -> Union[Transaction, SignedTransaction]:
         """
         Creates a transaction that represents an application call.
@@ -92,6 +82,7 @@ class ApplicationTransactionRepository:
                                           sp=suggested_params,
                                           index=app_id,
                                           app_args=app_args,
+                                          foreign_assets=foreign_assets,
                                           on_complete=on_complete)
 
         if sign_transaction:
