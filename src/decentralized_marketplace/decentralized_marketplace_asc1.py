@@ -15,9 +15,9 @@ class SimpleMarketplaceASC1(EscrowInterface, ResellMarketplaceInterface):
 
     class AppMethods:
         initialize_escrow = "initializeEscrow"
-        sell = "sell"
+        make_sell_offer = "makeSellOffer"
         buy = "buy"
-        stop_selling = "stopSelling"
+        stop_sell_offer = "stopSellOffer"
 
     class AppState:
         not_initialized = Int(0)
@@ -27,25 +27,26 @@ class SimpleMarketplaceASC1(EscrowInterface, ResellMarketplaceInterface):
     def application_start(self):
         actions = Cond(
             [Txn.application_id() == Int(0), self.app_initialization()],
-            [Txn.application_args[0] == Bytes(self.AppMethods.buy), self.buy()],
             [Txn.application_args[0] == Bytes(self.AppMethods.initialize_escrow), self.initialize_escrow()],
-            [Txn.application_args[0] == Bytes(self.AppMethods.stop_selling), self.stop_selling()],
-            [Txn.application_args[0] == Bytes(self.AppMethods.sell), self.sell()]
+            [Txn.application_args[0] == Bytes(self.AppMethods.make_sell_offer), self.make_sell_offer()],
+            [Txn.application_args[0] == Bytes(self.AppMethods.buy), self.buy()],
+            [Txn.application_args[0] == Bytes(self.AppMethods.stop_sell_offer), self.stop_sell_offer()]
         )
 
         return actions
 
     def app_initialization(self):
         """
-        CreateAppTxn with 3 arguments: asa_id, asa_owner, app_admin.
+        CreateAppTxn with 2 arguments: asa_owner, app_admin.
+        The foreign_assets array should have 1 asa_id which will be the id of the NFT of interest.
         :return:
         """
         return Seq([
-            Assert(Txn.application_args.length() == Int(3)),
+            Assert(Txn.application_args.length() == Int(2)),
             App.globalPut(self.Variables.app_state, self.AppState.not_initialized),
-            App.globalPut(self.Variables.asa_id, Btoi(Txn.application_args[0])),
-            App.globalPut(self.Variables.asa_owner, Txn.application_args[1]),
-            App.globalPut(self.Variables.app_admin, Txn.application_args[2]),
+            App.globalPut(self.Variables.asa_id, Txn.assets[0]),
+            App.globalPut(self.Variables.asa_owner, Txn.application_args[0]),
+            App.globalPut(self.Variables.app_admin, Txn.application_args[1]),
             Return(Int(1))
         ])
 
@@ -54,25 +55,39 @@ class SimpleMarketplaceASC1(EscrowInterface, ResellMarketplaceInterface):
         Application call from the app_admin.
         :return:
         """
-        not_valid_number_of_transactions = Global.group_size() != Int(1)
         escrow_address = App.globalGetEx(Int(0), self.Variables.escrow_address)
 
-        setup_escrow = Seq([
+        asset_escrow = AssetParam.clawback(Txn.assets[0])
+        manager_address = AssetParam.manager(Txn.assets[0])
+        freeze_address = AssetParam.freeze(Txn.assets[0])
+        reserve_address = AssetParam.reserve(Txn.assets[0])
+        default_frozen = AssetParam.defaultFrozen(Txn.assets[0])
+
+        return Seq([
+            escrow_address,
+            Assert(escrow_address.hasValue() == Int(0)),
+
+            Assert(App.globalGet(self.Variables.app_admin) == Txn.sender()),
+            Assert(Global.group_size() == Int(1)),
+
+            asset_escrow,
+            manager_address,
+            freeze_address,
+            reserve_address,
+            default_frozen,
+            Assert(Txn.assets[0] == App.globalGet(self.Variables.asa_id)),
+            Assert(asset_escrow.value() == Txn.application_args[1]),
+            Assert(default_frozen.value()),
+            Assert(manager_address.value() == Global.zero_address()),
+            Assert(freeze_address.value() == Global.zero_address()),
+            Assert(reserve_address.value() == Global.zero_address()),
+
             App.globalPut(self.Variables.escrow_address, Txn.application_args[1]),
             App.globalPut(self.Variables.app_state, self.AppState.active),
             Return(Int(1))
         ])
 
-        not_admin = App.globalGet(self.Variables.app_admin) != Txn.sender()
-
-        return Seq([
-            escrow_address,
-            If(Or(escrow_address.hasValue(),
-                  not_admin,
-                  not_valid_number_of_transactions)).Then(Return(Int(0))).Else(setup_escrow)
-        ])
-
-    def sell(self):
+    def make_sell_offer(self):
         """
         Single application call with 2 arguments.
         - method_name
@@ -138,7 +153,7 @@ class SimpleMarketplaceASC1(EscrowInterface, ResellMarketplaceInterface):
 
         return If(can_buy).Then(update_state).Else(Return(Int(0)))
 
-    def stop_selling(self):
+    def stop_sell_offer(self):
         """
         Single application call.
         :return:
