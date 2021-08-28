@@ -4,6 +4,7 @@ import yaml
 import os
 from pathlib import Path
 from algosdk import mnemonic
+from algosdk.v2client import indexer
 
 
 def get_project_root_path() -> Path:
@@ -32,6 +33,18 @@ def get_client():
 
     algod_client = algod.AlgodClient(token, address, headers=purestake_token)
     return algod_client
+
+
+def get_indexer():
+    config = load_config()
+
+    token = config.get('client_credentials').get('token')
+    headers = {'X-Api-key': token}
+    my_indexer = indexer.IndexerClient(indexer_token=token,
+                                       indexer_address="https://testnet-algorand.api.purestake.io/idx2",
+                                       headers=headers)
+
+    return my_indexer
 
 
 def get_account_credentials(account_id: int) -> (str, str, str):

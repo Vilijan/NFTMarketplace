@@ -10,7 +10,8 @@ nft_service = NFTService(nft_creator_pk=acc_pk,
                          nft_creator_address=acc_address,
                          client=client,
                          unit_name="TOK",
-                         asset_name="Tokility")
+                         asset_name="Tokility",
+                         nft_url="https://ipfs.io/ipfs/QmSg13NNtvpL6ebgeGKxZUHTCxcg4ut6k4dcMrUu5sG664?filename=6.png")
 
 nft_service.create_nft()
 
