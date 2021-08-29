@@ -38,7 +38,7 @@ class NetworkInteraction:
         return suggested_params
 
     @staticmethod
-    def submit_asa_creation(client: algod.AlgodClient, transaction: SignedTransaction) -> Optional[int]:
+    def submit_asa_creation(client: algod.AlgodClient, transaction: SignedTransaction) -> (Optional[int], str):
         """
         Submits a ASA creation transaction to the network. If the transaction is successful the ASA's id is returned.
         :param client:
@@ -51,7 +51,7 @@ class NetworkInteraction:
 
         try:
             ptx = client.pending_transaction_info(txid)
-            return ptx["asset-index"]
+            return ptx["asset-index"], txid
         except Exception as e:
             # TODO: Proper logging needed.
             print(e)

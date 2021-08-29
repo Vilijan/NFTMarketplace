@@ -90,6 +90,8 @@ class NFTMarketplace:
 
         self.app_id = transaction_response["application-index"]
 
+        return tx_id
+
     def initialize_escrow(self):
         app_args = [
             self.nft_marketplace_asc1.AppMethods.initialize_escrow,
@@ -105,9 +107,11 @@ class NFTMarketplace:
             foreign_assets=[self.nft_id],
         )
 
-        _ = NetworkInteraction.submit_transaction(
+        tx_id = NetworkInteraction.submit_transaction(
             self.client, transaction=initialize_escrow_txn
         )
+
+        return tx_id
 
     def fund_escrow(self):
         fund_escrow_txn = PaymentTransactionRepository.payment(
@@ -119,9 +123,11 @@ class NFTMarketplace:
             sign_transaction=True,
         )
 
-        _ = NetworkInteraction.submit_transaction(
+        tx_id = NetworkInteraction.submit_transaction(
             self.client, transaction=fund_escrow_txn
         )
+
+        return tx_id
 
     def make_sell_offer(self, sell_price: int, nft_owner_pk):
         app_args = [self.nft_marketplace_asc1.AppMethods.make_sell_offer, sell_price]
@@ -135,8 +141,8 @@ class NFTMarketplace:
             sign_transaction=True,
         )
 
-        _ = NetworkInteraction.submit_transaction(self.client, transaction=app_call_txn)
-        print("NFT set on sale")
+        tx_id = NetworkInteraction.submit_transaction(self.client, transaction=app_call_txn)
+        return tx_id
 
     def buy_nft(self,
                 nft_owner_address, buyer_address, buyer_pk, buy_price):
@@ -192,4 +198,4 @@ class NFTMarketplace:
                         asa_transfer_txn_signed]
 
         tx_id = self.client.send_transactions(signed_group)
-        print(f'Buy asa transaction completed in: {tx_id}')
+        return tx_id

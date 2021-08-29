@@ -4,13 +4,13 @@ from src.blockchain_utils.transaction_repository import ASATransactionRepository
 
 class NFTService:
     def __init__(
-        self,
-        nft_creator_address: str,
-        nft_creator_pk: str,
-        client,
-        unit_name: str,
-        asset_name: str,
-        nft_url=None,
+            self,
+            nft_creator_address: str,
+            nft_creator_pk: str,
+            client,
+            unit_name: str,
+            asset_name: str,
+            nft_url=None,
     ):
         self.nft_creator_address = nft_creator_address
         self.nft_creator_pk = nft_creator_pk
@@ -38,11 +38,11 @@ class NFTService:
             sign_transaction=True,
         )
 
-        nft_id = NetworkInteraction.submit_asa_creation(
+        nft_id, tx_id = NetworkInteraction.submit_asa_creation(
             client=self.client, transaction=signed_txn
         )
         self.nft_id = nft_id
-        return nft_id
+        return tx_id
 
     def change_nft_credentials_txn(self, escrow_address):
         txn = ASATransactionRepository.change_asa_management(
@@ -57,11 +57,14 @@ class NFTService:
             sign_transaction=True,
         )
 
-        _ = NetworkInteraction.submit_transaction(self.client, transaction=txn)
+        tx_id = NetworkInteraction.submit_transaction(self.client, transaction=txn)
+
+        return tx_id
 
     def opt_in(self, account_pk):
         opt_in_txn = ASATransactionRepository.asa_opt_in(
             client=self.client, sender_private_key=account_pk, asa_id=self.nft_id
         )
 
-        _ = NetworkInteraction.submit_transaction(self.client, transaction=opt_in_txn)
+        tx_id = NetworkInteraction.submit_transaction(self.client, transaction=opt_in_txn)
+        return tx_id
