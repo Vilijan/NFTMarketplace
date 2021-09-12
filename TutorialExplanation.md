@@ -279,7 +279,33 @@ def stop_sell_offer(self):
 
 # Step 3: Implementation of the Stateless Smart Contract
 
+As we have mentioned earlier, we will use a stateless smart contract as a clawback address for the NFT. We are able to transfer the NFT from one account to another only when the code in the contract evaluates to true.
 
+Most of the logic for the NFTMarketplace application is located in the stateful smart contract, so the escrow contract needs to satisfy only the following conditions:
+
+- The AssetTransfer transaction, which is signed by this contract, is part of an Atomic Transfer. The only way when we transfer the NFT from one address to another is when we execute the `buy` method in the application. 
+- We need to check that the first transaction in the Atomic Transfer is calling the correct application. When we compile the code in the escrow contract, as `app_id`we pass the id from the stateful smart contract. 
+- We validate whether we are transferring the correct NFT. Each NFT will have separate escrow address.
+
+```python
+def nft_escrow(app_id: int, asa_id: int):
+    return Seq([
+        Assert(Global.group_size() == Int(3)), # atomic transfer with three transactions
+        Assert(Gtxn[0].application_id() == Int(app_id)), # we are calling the right application
+
+        Assert(Gtxn[1].type_enum() == TxnType.Payment),
+
+        Assert(Gtxn[2].asset_amount() == Int(1)),
+        Assert(Gtxn[2].xfer_asset() == Int(asa_id)), # we are transferring the correct NFT
+        Assert(Gtxn[2].fee() <= Int(1000)),
+        Assert(Gtxn[2].asset_close_to() == Global.zero_address()),
+        Assert(Gtxn[2].rekey_to() == Global.zero_address()),
+
+        Return(Int(1))
+    ])
+```
+
+With the escrow stateless smart contract, we complete all of the PyTeal code that is part of the NFTMarketplace application. This code will run on the Algorand blockchain. The only thing that is left for us to do is to implement the communication with the contracts.
 
 # Step 4: Communication services
 
