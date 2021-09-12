@@ -12,6 +12,8 @@ The following [document](https://github.com/algorandfoundation/ARCs/blob/6a9f91a
 
 > An interface is a logically grouped set of methods. A method is a section of code intended to be invoked externally with an application call transaction.
 
+#TODO: Add explanation and link to the Cosimo Bassi State observer.
+
 Coming back to our application, I try to follow those suggestions and first define an `NFTMarketplaceInterface` which contains all of the necessary methods. Those methods define the communication between the stateful smart contract and the external applications. 
 
 ```python
@@ -117,6 +119,8 @@ Additionally, we have one special method `app_initialization`. We are calling th
 
 In order to deploy the application on the network, we need three required arguments: the address which currently holds the NFT, the address which has admin rights in the application and the ID of the NFT. We pass the `asa_owner` and the `app_admin` as application arguments, while the `asa_id` is sent in the `foreign_assets` field of the `ApplicationCreateTxn`.
 
+You can read more about the [assets](https://pyteal.readthedocs.io/en/latest/api.html#pyteal.TxnObject.assets) field in the PyTeal documentation. This is a really powerful feature, it can enable stateful smart contracts to look up information about assets and account balances. You can read more about it on the following [link](https://pyteal.readthedocs.io/en/latest/assets.html).
+
 ```python
 def app_initialization(self):
      return Seq([
@@ -135,13 +139,15 @@ def app_initialization(self):
 
 After successful deployment of the application, the admin first needs to call the `initialize_escrow` method in order to setup the stateless contract which will be responsible for transferring the NFT. We achieve this by setting up the address of the stateless smart contract as the [clawback address](https://developer.algorand.org/docs/reference/transactions/#asset-clawback-transaction) of the NFT.
 
-In order to have persistent logic in the application, we make the NFT frozen as well. This removes the ability from the user to be able to send the NFT to an arbitrary address. One way to remove this constraint would be to add a `gift` method in the `NFTMarketplaceASC1` smart contract, which will allow the `asa_owner` to be able to send the NFT for free anyone. I haven't implemented this features so I leave this as an exercise for you :)
+In order to have persistent logic in the application, we make the NFT frozen as well. This removes the ability from the user to be able to send the NFT to an arbitrary address. One way to remove this constraint would be to add a `gift` method in the `NFTMarketplaceASC1` smart contract, which will allow the `asa_owner` to be able to send the NFT for free to anyone. I haven't implemented this feature so I leave this as an exercise for you :)
 
 When we call this method, we want to check whether all the properties in the NFT are as we expect them to be. 
 
-- We don't want the NFT to have a manager address. With this requirement we remove the possibility for changing the clawback address of the NFT once the escrow has been initialized in the application.
+- We don't want the NFT to have a manager address. With this requirement we remove the possibility for changing the clawback address of the NFT.  We want the clawback address to be constant because we use and store it in the stateful smart contract.
 - We check whether the clawback address of the NFT is the equal to the escrow address which we pass as an argument.
-- We want the NFT to be frozen. If this wasn't the case, one would be able to send the NFT to some address while the `asa_owner` state variable would not get changed in the application.
+- We want the NFT to be frozen. If this wasn't the case, one would be able to send the NFT to some address while the `asa_owner` state variable would not get changed.
+
+In the code below I use the AssetParam group of expressions, you can read more about it on the official [PyTeal documentation]().
 
 ```python
  def initialize_escrow(self, escrow_address):
@@ -182,15 +188,94 @@ After successful initialization of the escrow by the admin, the application move
 
 ## Make sell offer
 
+We sell the NFT through sale offers. Only the NFT owner is able to call the application in order to initiate a sell offer. The application call transaction contains two arguments: the name of the method and the NFT price. This application call will update the internal state from `AppState.active` to `AppState.selling_in_progress`. 
 
+```python
+    def make_sell_offer(self, sell_price):
+        valid_number_of_transactions = Global.group_size() == Int(1)
+        app_is_active = Or(App.globalGet(self.Variables.app_state) == self.AppState.active,
+                           App.globalGet(self.Variables.app_state) == self.AppState.selling_in_progress)
+
+        valid_seller = Txn.sender() == App.globalGet(self.Variables.asa_owner)
+        valid_number_of_arguments = Txn.application_args.length() == Int(2)
+
+        can_sell = And(valid_number_of_transactions,
+                       app_is_active,
+                       valid_seller,
+                       valid_number_of_arguments)
+
+        update_state = Seq([
+            App.globalPut(self.Variables.asa_price, Btoi(sell_price)),
+            App.globalPut(self.Variables.app_state, self.AppState.selling_in_progress),
+            Return(Int(1))
+        ])
+
+        return If(can_sell).Then(update_state).Else(Return(Int(0)))
+```
 
 ## Buy
 
+The `buy` function is the most complex function in the application. The application call transaction that executes this part of the code needs to be grouped in an [Atomic Transfer](https://developer.algorand.org/docs/features/atomic_transfers/) that contains three transactions:
 
+1. **Application call transaction** that executes the PyTeal code that is located inside the `buy` function. There we make sure that that the application is in `AppState.selling_in_progress` state, the `asa_owner` receives `asa_price` algos, and the `asa_buyer` receives the NFT.
+2. **Payment transaction** that pays the right amount of algos to the seller of the NFT. 
+3. **Atomic transfer transaction** that transfers the NFT from the current owner to the new owner. The new owner is the sender of the previous two transactions in the Atomic Transfer. 
+
+```python
+ def buy(self):
+        valid_number_of_transactions = Global.group_size() == Int(3)
+        asa_is_on_sale = App.globalGet(self.Variables.app_state) == self.AppState.selling_in_progress
+
+        valid_payment_to_seller = And(
+            Gtxn[1].type_enum() == TxnType.Payment,
+            Gtxn[1].receiver() == App.globalGet(self.Variables.asa_owner), # correct receiver
+            Gtxn[1].amount() == App.globalGet(self.Variables.asa_price), # correct amount 
+            Gtxn[1].sender() == Gtxn[0].sender(), # equal sender of the first two transactions, which is the buyer
+            Gtxn[1].sender() == Gtxn[2].asset_receiver() # correct receiver of the NFT
+        )
+
+        valid_asa_transfer_from_escrow_to_buyer = And(
+            Gtxn[2].type_enum() == TxnType.AssetTransfer,
+            Gtxn[2].sender() == App.globalGet(self.Variables.escrow_address),
+            Gtxn[2].xfer_asset() == App.globalGet(self.Variables.asa_id),
+            Gtxn[2].asset_amount() == Int(1)
+        )
+
+        can_buy = And(valid_number_of_transactions,
+                      asa_is_on_sale,
+                      valid_payment_to_seller,
+                      valid_asa_transfer_from_escrow_to_buyer)
+
+        update_state = Seq([
+            App.globalPut(self.Variables.asa_owner, Gtxn[0].sender()), # update the owner of the ASA.
+            App.globalPut(self.Variables.app_state, self.AppState.active), # update the app state
+            Return(Int(1))
+        ])
+
+        return If(can_buy).Then(update_state).Else(Return(Int(0)))
+```
 
 ## Stop sell offer
 
+As a final feature of the application, we want to add the possibility for canceling a selling order. If the `asa_owner` no longer wants to sell the NFT, he is able to achieve this by executing an Application call transaction that executes the `stop_selling_offer` method. This is a pretty straight forward method, where we update the internal state of the application from `AppState.selling_in_progress` to `AppState.active` only if the sender of the application is the owner of the NFT.
 
+```python
+def stop_sell_offer(self):
+        valid_number_of_transactions = Global.group_size() == Int(1)
+        valid_caller = Txn.sender() == App.globalGet(self.Variables.asa_owner)
+        app_is_initialized = App.globalGet(self.Variables.app_state) != self.AppState.not_initialized
+
+        can_stop_selling = And(valid_number_of_transactions,
+                               valid_caller,
+                               app_is_initialized)
+
+        update_state = Seq([
+            App.globalPut(self.Variables.app_state, self.AppState.active),
+            Return(Int(1))
+        ])
+
+        return If(can_stop_selling).Then(update_state).Else(Return(Int(0)))
+```
 
 # Step 3: Implementation of the Stateless Smart Contract
 
