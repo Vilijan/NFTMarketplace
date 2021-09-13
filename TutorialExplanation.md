@@ -392,17 +392,234 @@ def app_initialization(self, nft_owner_address):
         return tx_id
 ```
 
-The logic for the function above can be summarized in the following steps:
+The goal of the function above is to define a Application Create Transaction and submit it on the network. This transaction can receive various kinds of parameters, so we need to setup the ones that we need to use in our application. The necessity for the specific parameters was defined in the `app_initialization` method of the `NFTMarketplaceASC1` contract. We summarize the implementation logic in the following steps: 
 
 - We obtain and compile the clear and the approval program from the stateful smart contract.
-- We create a `app_args` array which holds the `nft_owner_address` and the `admin_address`. This array will be passed to the `app_args` field in the application create transaction.
+- We create an `app_args` array which holds the `nft_owner_address` and the `admin_address`. This array will be passed to the `app_args` field in the application create transaction.
 - We pass the `nft_id` in the foreign_assets field parameter of the application create transaction.
 
 If this transaction succeeds, we have successfully deployed the application that will handle the selling and re-selling of the NFT with the this particular `nft_id`. 
 
-The next
+We now have the `nft_id` and the `app_id` which are the required parameters for initializing the escrow address. Later on, will we will setup this address as the clawback address in the NFT. With the help of the `nft_escrow` function that we defined in the previous section, we can obtain the escrow address and escrow bytes:
 
+```python
+	@property
+    def escrow_bytes(self):
+        if self.app_id is None:
+            raise ValueError("App not deployed")
 
+        escrow_fund_program_compiled = compileTeal(
+            nft_escrow(app_id=self.app_id, asa_id=self.nft_id),
+            mode=Mode.Signature,
+            version=4,
+        )
+
+        return NetworkInteraction.compile_program(
+            client=self.client, source_code=escrow_fund_program_compiled
+        )
+
+    @property
+    def escrow_address(self):
+        return algo_logic.address(self.escrow_bytes)
+```
+
+We now need to implement a `initialize_escrow` function which will execute the corresponding transaction that will setup the escrow address in the stateful smart contract. Note that before calling this function, we need to have changed the management credentials of the NFT. The code for changing the management of the NFT will be explained in the `NFTService`.
+
+```python
+def initialize_escrow(self):
+        app_args = [
+            self.nft_marketplace_asc1.AppMethods.initialize_escrow,
+            decode_address(self.escrow_address),
+        ]
+
+        initialize_escrow_txn = ApplicationTransactionRepository.call_application(
+            client=self.client,
+            caller_private_key=self.admin_pk,
+            app_id=self.app_id,
+            on_complete=algo_txn.OnComplete.NoOpOC,
+            app_args=app_args,
+            foreign_assets=[self.nft_id],
+        )
+
+        tx_id = NetworkInteraction.submit_transaction(
+            self.client, transaction=initialize_escrow_txn
+        )
+
+        return tx_id
+```
+
+After successfully submitting the `initialize_escrow` transaction, the initial state of the stateful smart contract is changed to `AppState.active`. Now, we need to implement the `make_sell_offer` and `buy_nft` methods.
+
+The `make_sell_offer` is just a simple application call transaction where we pass two arguments: the method name and the price for the sell offer. The stateful smart contract will approve the transaction only if the sender of the transaction actually holds the required NFT.
+
+```python
+def make_sell_offer(self, sell_price: int, nft_owner_pk):
+        app_args = [self.nft_marketplace_asc1.AppMethods.make_sell_offer, sell_price]
+
+        app_call_txn = ApplicationTransactionRepository.call_application(
+            client=self.client,
+            caller_private_key=nft_owner_pk,
+            app_id=self.app_id,
+            on_complete=algo_txn.OnComplete.NoOpOC,
+            app_args=app_args,
+            sign_transaction=True,
+        )
+
+        tx_id = NetworkInteraction.submit_transaction(self.client, transaction=app_call_txn)
+        return tx_id
+```
+
+As usually, in the end we need to implement the most complex method. In order to buy an NFT we need to submit Atomic Transfer of 3 transactions:
+
+1. **Application call transaction** from the buyer to the application call. This is a pretty simple transaction, we pass only the method name as an application argument.
+2. **Payment transaction** from the buyer to the seller of the NFT. The amount of this transaction should equal to the amount that is set in the sell offer. 
+3. **Atomic transfer transaction** from the escrow address to the buyer. Since the escrow address is the clawback address of the NFT, it is able to transfer the NFT from one address to another. This transaction needs to be signed with a [Logic Signature](https://developer.algorand.org/docs/features/asc1/stateless/modes/#logic-signatures). The transaction is approved only when the TEAL logic in the escrow contract evaluates to true.
+
+The code below describes the implementation for the `buy_nft` function, that creates all of the necessary transactions in order to buy the NFT.
+
+```python
+def buy_nft(self, nft_owner_address, buyer_address, buyer_pk, buy_price):
+        # 1. Application call txn
+        app_args = [
+            self.nft_marketplace_asc1.AppMethods.buy
+        ]
+
+        app_call_txn = ApplicationTransactionRepository.call_application(client=self.client,
+                                                                         caller_private_key=buyer_pk,
+                                                                         app_id=self.app_id,
+                                                                         on_complete=algo_txn.OnComplete.NoOpOC,
+                                                                         app_args=app_args,
+                                                                         sign_transaction=False)
+
+        # 2. Payment transaction: buyer -> seller
+        asa_buy_payment_txn = PaymentTransactionRepository.payment(client=self.client,
+                                                                   sender_address=buyer_address,
+                                                                   receiver_address=nft_owner_address,
+                                                                   amount=buy_price,
+                                                                   sender_private_key=None,
+                                                                   sign_transaction=False)
+
+        # 3. Asset transfer transaction: escrow -> buyer
+
+        asa_transfer_txn = ASATransactionRepository.asa_transfer(client=self.client,
+                                                                 sender_address=self.escrow_address,
+                                                                 receiver_address=buyer_address,
+                                                                 amount=1,
+                                                                 asa_id=self.nft_id,
+                                                                 revocation_target=nft_owner_address,
+                                                                 sender_private_key=None,
+                                                                 sign_transaction=False)
+
+        # Atomic transfer
+        gid = algo_txn.calculate_group_id([app_call_txn,
+                                           asa_buy_payment_txn,
+                                           asa_transfer_txn])
+
+        app_call_txn.group = gid
+        asa_buy_payment_txn.group = gid
+        asa_transfer_txn.group = gid
+
+        app_call_txn_signed = app_call_txn.sign(buyer_pk)
+
+        asa_buy_txn_signed = asa_buy_payment_txn.sign(buyer_pk)
+
+        asa_transfer_txn_logic_signature = algo_txn.LogicSig(self.escrow_bytes)
+        asa_transfer_txn_signed = algo_txn.LogicSigTransaction(asa_transfer_txn, asa_transfer_txn_logic_signature)
+
+        signed_group = [app_call_txn_signed,
+                        asa_buy_txn_signed,
+                        asa_transfer_txn_signed]
+
+        tx_id = self.client.send_transactions(signed_group)
+        return tx_id
+```
+
+With the implementation of this method, we complete the `NFTMarketplace` service.
+
+## NFTService
+
+Every instance of the `NFTService` class will be responsible for a single NFT that lives on the blockchain. In the initializer we need to pass the required arguments for creating an NFT, such as: the address of the creator, the name of the NFT and an optional URL which can hold a [ipfs](https://ipfs.io/) image. 
+
+```python
+class NFTService:
+    def __init__(
+            self,
+            nft_creator_address: str,
+            nft_creator_pk: str,
+            client,
+            unit_name: str,
+            asset_name: str,
+            nft_url=None,
+    ):
+        self.nft_creator_address = nft_creator_address
+        self.nft_creator_pk = nft_creator_pk
+        self.client = client
+
+        self.unit_name = unit_name
+        self.asset_name = asset_name
+        self.nft_url = nft_url
+
+        self.nft_id = None
+```
+
+We create the NFT with an Asset Config Transaction. At this point all of the management fields of the NFT are filled. We will change this later on. If we leave the NFT with those management credentials, the stateful smart contract should reject it.
+
+```python
+def create_nft(self):
+        signed_txn = ASATransactionRepository.create_non_fungible_asa(
+            client=self.client,
+            creator_private_key=self.nft_creator_pk,
+            unit_name=self.unit_name,
+            asset_name=self.asset_name,
+            note=None,
+            manager_address=self.nft_creator_address,
+            reserve_address=self.nft_creator_address,
+            freeze_address=self.nft_creator_address,
+            clawback_address=self.nft_creator_address,
+            url=self.nft_url,
+            default_frozen=True,
+            sign_transaction=True,
+        )
+
+        nft_id, tx_id = NetworkInteraction.submit_asa_creation(
+            client=self.client, transaction=signed_txn
+        )
+        self.nft_id = nft_id
+        return tx_id
+```
+
+Next, we implement a `change_nft_credentials_txn` method that clears all of the credentials of the NFT, except the escrow address.
+
+```python
+def change_nft_credentials_txn(self, escrow_address):
+        txn = ASATransactionRepository.change_asa_management(
+            client=self.client,
+            current_manager_pk=self.nft_creator_pk,
+            asa_id=self.nft_id,
+            manager_address="",
+            reserve_address="",
+            freeze_address="",
+            strict_empty_address_check=False,
+            clawback_address=escrow_address,
+            sign_transaction=True,
+        )
+
+        tx_id = NetworkInteraction.submit_transaction(self.client, transaction=txn)
+
+        return tx_id
+```
+
+In the end we need to implement just a simple method that allows a user to opt-in to a particular NFT. This is a really nice property of the Algorand blockchain, it doesn't allow users to receive tokens which they haven't allowed to be stored in their wallets. After a successful opt-in for an Algorand Standard Asset, the user is able to receive it.
+
+```python
+ def opt_in(self, account_pk):
+        opt_in_txn = ASATransactionRepository.asa_opt_in(
+            client=self.client, sender_private_key=account_pk, asa_id=self.nft_id
+        )
+
+        tx_id = NetworkInteraction.submit_transaction(self.client, transaction=opt_in_txn)
+        return tx_id
+```
 
 # Step 5: Algorand TestNet deployment
 
