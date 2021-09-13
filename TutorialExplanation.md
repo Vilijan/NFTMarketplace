@@ -623,5 +623,27 @@ In the end we need to implement just a simple method that allows a user to opt-i
 
 # Step 5: Algorand TestNet deployment
 
+Finally, we have implemented everything. With the help of the services, we can now easily deploy and test the NFTMarketplace application on the Algorand Testnet. The following [script](https://github.com/Vilijan/NFTMarketplace/blob/main/main.py) simulates making a sell offer and executing it by a particular buyer. From the code below, we can see how everything is nicely abstracted which make the execution of the transactions really convenient. 
 
+```python
+nft_service.create_nft()
 
+nft_marketplace_service.app_initialization(nft_owner_address=admin_addr)
+
+nft_service.change_nft_credentials_txn(escrow_address=nft_marketplace_service.escrow_address)
+
+nft_marketplace_service.initialize_escrow()
+nft_marketplace_service.fund_escrow()
+nft_marketplace_service.make_sell_offer(sell_price=100000, nft_owner_pk=admin_pk)
+
+nft_service.opt_in(buyer_pk)
+
+nft_marketplace_service.buy_nft(nft_owner_address=admin_addr,
+                                buyer_address=buyer_addr,
+                                buyer_pk=buyer_pk,
+                                buy_price=100000)
+```
+
+Additionally, I have implemented [UI script](https://github.com/Vilijan/NFTMarketplace/blob/main/app.py) that simulates a simple NFTMarketplace where we sell and buy two particular NFTs. You can watch the video below where I demonstrate how you can use the UI.
+
+#TODO: Add link to the video.
