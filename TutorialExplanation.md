@@ -285,7 +285,7 @@ Most of the logic for the NFTMarketplace application is located in the stateful 
 
 - The AssetTransfer transaction, which is signed by this contract, is part of an Atomic Transfer. The only way when we transfer the NFT from one address to another is when we execute the `buy` method in the application. 
 - We need to check that the first transaction in the Atomic Transfer is calling the correct application. When we compile the code in the escrow contract, as `app_id`we pass the id from the stateful smart contract. 
-- We validate whether we are transferring the correct NFT. Each NFT will have separate escrow address.
+- We validate whether we are transferring the correct NFT with the `asa_id` parameter.. Each NFT will have separate escrow address.
 
 ```python
 def nft_escrow(app_id: int, asa_id: int):
@@ -308,6 +308,99 @@ def nft_escrow(app_id: int, asa_id: int):
 With the escrow stateless smart contract, we complete all of the PyTeal code that is part of the NFTMarketplace application. This code will run on the Algorand blockchain. The only thing that is left for us to do is to implement the communication with the contracts.
 
 # Step 4: Communication services
+
+We communicate with the smart contracts through transactions. I believe it is a good practice to separate the creation of transactions in separate functions. Additionally, I want to group the logical functions into separate classes which I call services. If we follow this principle, we can easily recreate the transactions multiple times and interact with the smart contracts more easily. 
+
+In our application we have two kind of services:
+
+- `NFTMarketplace` service that implements all of the interactions with the stateful smart contract. This service enables us to call the methods that are implemented in the `NFTMarketplaceInterface`. On top of that, we have one additional method that deploys the application on the blockchain. So, the `NFTMarketplace` has the following methods: `app_initialization`, `initialize_escrow`, `fund_escrow`, `make_sell_offer` and `buy_nft`. In the UI of the application, I don't use the `stop_sell_offer` method so I haven't implemented it in the service class. It is a good exercise for you to try to implement the necessary transaction in order to execute that method.
+- `NFTService` that enables us to do create an NFT, change its credentials and opt-in a user. So, the `NFTService` has the following methods: `create_nft`, `change_nft_credentials` and `opt_in`.
+
+In the following sections we will look into more details how we can create those transactions using the [py-algorand-sdk](https://github.com/algorand/py-algorand-sdk).
+
+## NFTMarketplace
+
+Each instance of the `NFTMarketplace` service will represent a separate stateful smart contract deployed on the network. Each of those contracts is responsible for managing the state of one particular NFT. We initialize the smart contrat with the following code:
+
+```python
+class NFTMarketplace:
+    def __init__(
+            self, admin_pk, admin_address, nft_id, client
+    ):
+        self.admin_pk = admin_pk
+        self.admin_address = admin_address
+        self.nft_id = nft_id
+
+        self.client = client
+
+        self.teal_version = 4
+        self.nft_marketplace_asc1 = NFTMarketplaceASC1()
+
+        self.app_id = None
+```
+
+In addition to the required arguments, in the constructor method of the class we initialize the `NFTMarketplaceASC1` stateful smart contract  which we described earlier. From this object we will be able to obtain the TEAL code that will be submitted to the network. 
+
+The first function that we define, creates and executes the transaction that submits the statefull smart contract on the network.  We achieve this with the code bellow:
+
+```python
+def app_initialization(self, nft_owner_address):
+        approval_program_compiled = compileTeal(
+            self.nft_marketplace_asc1.approval_program(),
+            mode=Mode.Application,
+            version=4,
+        )
+
+        clear_program_compiled = compileTeal(
+            self.nft_marketplace_asc1.clear_program(),
+            mode=Mode.Application,
+            version=4
+        )
+
+        approval_program_bytes = NetworkInteraction.compile_program(
+            client=self.client, source_code=approval_program_compiled
+        )
+
+        clear_program_bytes = NetworkInteraction.compile_program(
+            client=self.client, source_code=clear_program_compiled
+        )
+
+        app_args = [
+            decode_address(nft_owner_address),
+            decode_address(self.admin_address),
+        ]
+
+        app_transaction = ApplicationTransactionRepository.create_application(
+            client=self.client,
+            creator_private_key=self.admin_pk,
+            approval_program=approval_program_bytes,
+            clear_program=clear_program_bytes,
+            global_schema=self.nft_marketplace_asc1.global_schema,
+            local_schema=self.nft_marketplace_asc1.local_schema,
+            app_args=app_args,
+            foreign_assets=[self.nft_id],
+        )
+
+        tx_id = NetworkInteraction.submit_transaction(
+            self.client, transaction=app_transaction
+        )
+
+        transaction_response = self.client.pending_transaction_info(tx_id)
+
+        self.app_id = transaction_response["application-index"]
+
+        return tx_id
+```
+
+The logic for the function above can be summarized in the following steps:
+
+- We obtain and compile the clear and the approval program from the stateful smart contract.
+- We create a `app_args` array which holds the `nft_owner_address` and the `admin_address`. This array will be passed to the `app_args` field in the application create transaction.
+- We pass the `nft_id` in the foreign_assets field parameter of the application create transaction.
+
+If this transaction succeeds, we have successfully deployed the application that will handle the selling and re-selling of the NFT with the this particular `nft_id`. 
+
+The next
 
 
 
