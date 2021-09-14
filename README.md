@@ -2,17 +2,17 @@
 
 In this tutorial, you will learn how to develop a simple decentralized application that performs buying and selling of a particular NFT. Multiple instances of this application represent an NFT Marketplace where users can mint, buy and sell NFTs. 
 Initially, a user will mint the NFT and link it to a Stateful Smart Contract. This contract will hold the implementation logic for the interactions between the seller and the buyer. Additionally, a separate Stateless Smart Contract is responsible for transferring the NFT to the rightful owner.
-Besides the application logic, I try to introduce some practices for developing dApps that can be useful for the development of other projects. Those practices aim to make the code more understandable, easily extendable, and interactable with other applications.
+Besides the application logic, I try to introduce some practices for developing dApps that can be useful for the development of other smart contracts. Those practices aim to make the code more understandable, easily extendable, and interactable with other applications.
 
 # Background
 
-Before reading the tutorial, I recommend you to watch the video below. In a simple web application, I show how to deploy and interact with the NFTMarketplace that I will describe in this tutorial.
+Before reading the tutorial, I recommend you to watch the video below. In a simple web application, I show how to deploy and interact with the NFTMarketplace. This tutorial will explain all of the details that are happening behind the scene.
 
 [![Watch the video](https://github.com/Vilijan/NFTMarketplace/blob/main/images/nftmarketplace_video.png?raw=true)](https://www.youtube.com/watch?v=KIcCcTvoVc8&ab_channel=VilijanMonev)
 
-# Step 1: Defining the Stateful Smart Contract Interface
+# 1. Defining the Stateful Smart Contract Interface
 
-A stateful smart contract represents an application that lives on the Algorand blockchain. Various entities can communicate with the application through application call transactions. Currently, a user-interface application(a mobile app, web app, CLI) creates the transactions and sends them on the network. However, I believe that in the future most of the communication will happen between the smart contracts. This indicates that the smart contracts will initiate the application call transactions. We should note that this feature is still not available on the Algorand blockchain.
+A stateful smart contract represents an application that lives on the Algorand blockchain. Various entities can communicate with the application through application call transactions. Currently, a user-interface application(a mobile app, web app, CLI) creates the transactions and sends them on the network. However, I believe that in the future most of the communication will happen between the smart contracts. This indicates that the smart contracts will initiate the application call transactions. We should note that this feature is still not available on the Algorand blockchain, my hope is that it will be available in the future.
 
 The following [document](https://github.com/algorandfoundation/ARCs/blob/6a9f91aed8068bbace872483a64cbf22d0e1c975/ARCs/arc-0004.md) suggests conventions for how to properly structure the communication with the stateful smart contracts. It introduces the concepts of an interface and a method. A single application implements one or multiple interfaces.
 
@@ -48,7 +48,7 @@ We define four methods in the `NFTMarketplaceInterace`:
 - `buy()` - a user buys the NFT that is on the sell offer.
 - `stop_sell_offer()` - ends the current selling offer for the NFT.
 
-# Step 2: Implementation of the Stateful Smart Contract
+# 2. Implementation of the Stateful Smart Contract
 
 The next step for us is to create a concrete class `NFTMarketplaceASC1` that implements the `NFTMarketplaceInterace`. This class will hold all of the PyTeal logic for the stateful smart contract. In this section, I will explain every code block of the `NFTMarketplaceASC1` smart contract.
 
@@ -281,7 +281,7 @@ def stop_sell_offer(self):
         return If(can_stop_selling).Then(update_state).Else(Return(Int(0)))
 ```
 
-# Step 3: Implementation of the Stateless Smart Contract
+# 3. Implementation of the Stateless Smart Contract
 
 As we have mentioned earlier, we will use a stateless smart contract as a clawback address for the NFT. We are able to transfer the NFT from one account to another only when the code in the contract evaluates to true.
 
@@ -311,7 +311,7 @@ def nft_escrow(app_id: int, asa_id: int):
 
 With the escrow stateless smart contract, we complete all of the PyTeal code that is part of the NFTMarketplace application. This code will run on the Algorand blockchain. The only thing that is left for us to do is to implement the communication with the contracts.
 
-# Step 4: Communication services
+# 4. Communication services
 
 We communicate with the smart contracts through transactions. I believe it is a good practice to separate the creation of transactions in separate functions. Additionally, I want to group the logical functions into separate classes which I call services. If we follow this principle, we can easily recreate the transactions multiple times and interact with the smart contracts more easily. 
 
@@ -328,9 +328,7 @@ Each instance of the `NFTMarketplace` service will represent a separate stateful
 
 ```python
 class NFTMarketplace:
-    def __init__(
-            self, admin_pk, admin_address, nft_id, client
-    ):
+    def __init__(self, admin_pk, admin_address, nft_id, client):
         self.admin_pk = admin_pk
         self.admin_address = admin_address
         self.nft_id = nft_id
@@ -404,7 +402,7 @@ The goal of the function above is to define a Application Create Transaction and
 
 If this transaction succeeds, we have successfully deployed the application that will handle the selling and re-selling of the NFT with the this particular `nft_id`. 
 
-We now have the `nft_id` and the `app_id` which are the required parameters for initializing the escrow address. Later on, will we will setup this address as the clawback address in the NFT. With the help of the `nft_escrow` function that we defined in the previous section, we can obtain the escrow address and escrow bytes:
+Now, we have the `nft_id` and the `app_id` which are the required parameters for initializing the escrow address. Later on, will we will setup this address as the clawback address in the NFT. With the help of the `nft_escrow` function that we defined in the previous section, we can obtain the escrow address and escrow bytes:
 
 ```python
 	@property
@@ -566,7 +564,7 @@ class NFTService:
         self.nft_id = None
 ```
 
-We create the NFT with an Asset Config Transaction. At this point all of the management fields of the NFT are filled. We will change this later on. If we leave the NFT with those management credentials, the stateful smart contract should reject it.
+We create the NFT with an Asset Config Transaction. At this point all of the management fields of the NFT are filled. We will change this later on. If we leave the NFT with those management credentials, the stateful smart contract should reject it. 
 
 ```python
 def create_nft(self):
@@ -625,7 +623,7 @@ In the end we need to implement just a simple method that allows a user to opt-i
         return tx_id
 ```
 
-# Step 5: Algorand TestNet deployment
+# 5. Algorand TestNet deployment
 
 Finally, we have implemented everything. With the help of the services, we can now easily deploy and test the NFTMarketplace application on the Algorand Testnet. The following [script](https://github.com/Vilijan/NFTMarketplace/blob/main/main.py) simulates making a sell offer and executing it by a particular buyer. From the code below, we can see how everything is nicely abstracted which make the execution of the transactions really convenient. 
 
