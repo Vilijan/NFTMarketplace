@@ -4,6 +4,12 @@ In this tutorial, you will learn how to develop a simple decentralized applicati
 Initially, a user will mint the NFT and link it to a Stateful Smart Contract. This contract will hold the implementation logic for the interactions between the seller and the buyer. Additionally, a separate Stateless Smart Contract is responsible for transferring the NFT to the rightful owner.
 Besides the application logic, I try to introduce some practices for developing dApps that can be useful for the development of other projects. Those practices aim to make the code more understandable, easily extendable, and interactable with other applications.
 
+# Background
+
+Before reading the tutorial, I recommend you to watch the video below. In a simple web application, I show how to deploy and interact with the NFTMarketplace that I will describe in this tutorial.
+
+[![Watch the video](https://github.com/Vilijan/NFTMarketplace/blob/main/images/nftmarketplace_video.png?raw=true)](https://www.youtube.com/watch?v=KIcCcTvoVc8&ab_channel=VilijanMonev)
+
 # Step 1: Defining the Stateful Smart Contract Interface
 
 A stateful smart contract represents an application that lives on the Algorand blockchain. Various entities can communicate with the application through application call transactions. Currently, a user-interface application(a mobile app, web app, CLI) creates the transactions and sends them on the network. However, I believe that in the future most of the communication will happen between the smart contracts. This indicates that the smart contracts will initiate the application call transactions. We should note that this feature is still not available on the Algorand blockchain.
@@ -11,8 +17,6 @@ A stateful smart contract represents an application that lives on the Algorand b
 The following [document](https://github.com/algorandfoundation/ARCs/blob/6a9f91aed8068bbace872483a64cbf22d0e1c975/ARCs/arc-0004.md) suggests conventions for how to properly structure the communication with the stateful smart contracts. It introduces the concepts of an interface and a method. A single application implements one or multiple interfaces.
 
 > An interface is a logically grouped set of methods. A method is a section of code intended to be invoked externally with an application call transaction.
-
-#TODO: Add explanation and link to the Cosimo Bassi State observer.
 
 Coming back to our application, I try to follow those suggestions and first define an `NFTMarketplaceInterface` which contains all of the necessary methods. Those methods define the communication between the stateful smart contract and the external applications. 
 
@@ -644,6 +648,5 @@ nft_marketplace_service.buy_nft(nft_owner_address=admin_addr,
                                 buy_price=100000)
 ```
 
-Additionally, I have implemented [UI script](https://github.com/Vilijan/NFTMarketplace/blob/main/app.py) that simulates a simple NFTMarketplace where we sell and buy two particular NFTs. You can watch the video below where I demonstrate how you can use the UI.
+Additionally, I have implemented [UI script](https://github.com/Vilijan/NFTMarketplace/blob/main/app.py) that simulates a simple NFTMarketplace where we sell and buy two particular NFTs. You can watch the [video](https://www.youtube.com/watch?v=KIcCcTvoVc8&ab_channel=VilijanMonev) where I demonstrate how you can use the UI. If you explore the UI script, you will also see how you can query the Algorand blockchain using the [indexer](https://developer.algorand.org/docs/features/indexer/).
 
-[https://www.youtube.com/watch?v=KIcCcTvoVc8&ab_channel=VilijanMonev![Watch the video](https://github.com/Vilijan/TicTacToe_Algorand/blob/main/images/video_bg.png?raw=true)
