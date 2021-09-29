@@ -1,0 +1,4 @@
+streamlit==0.87.0
+pyteal==0.8.0
+py_algorand_sdk==1.6.0
+PyYAML==5.4.1
